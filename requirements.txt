@@ -1,1 +1,4 @@
-pandas pypdf python-docx fpdf2
+pandas 
+pypdf 
+python-docx 
+fpdf2
