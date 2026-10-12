@@ -1,4 +1,0 @@
-pandas 
-pypdf 
-python-docx 
-fpdf2
