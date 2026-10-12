@@ -536,89 +536,157 @@ def clean_text_for_pdf(text):
     return text.encode('latin-1', 'replace').decode('latin-1')
 
 
+def _rp_plain(value):
+    """Display-only source cleanup. Analysis records are never modified."""
+    s = str(value if value is not None else "")
+    s = "".join(ch if ch.isprintable() else " " for ch in s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _rp_pdf_cell(text, style, filename=False):
+    s = _rp_plain(text)
+    if filename:
+        # Use basename only and let ReportLab wrap without injecting wbr markup.
+        s = os.path.basename(s)
+        s = s.replace("_", " _")
+    return Paragraph(escape(s), style)
+
+
 def generate_pdf_report(summary_text, risk_data, mitigation_data, governance_flags, metrics=None):
-    """Paginated, wrapping report; no truncated values."""
-    metrics=metrics or {}
-    buf=BytesIO(); doc=SimpleDocTemplate(buf,pagesize=(612,792),rightMargin=43,leftMargin=43,topMargin=48,bottomMargin=48)
-    styles=getSampleStyleSheet()
-    styles.add(ParagraphStyle(name='RPTitle',parent=styles['Title'],fontSize=19,leading=23,textColor=colors.HexColor('#0f172a'),spaceAfter=7))
-    styles.add(ParagraphStyle(name='RPBody',parent=styles['BodyText'],fontSize=9,leading=13,spaceAfter=7))
-    styles.add(ParagraphStyle(name='RPCell',parent=styles['BodyText'],fontSize=7.5,leading=10))
-    styles.add(ParagraphStyle(name='RPSection',parent=styles['Heading2'],fontSize=12,leading=16,textColor=colors.HexColor('#0f172a'),spaceBefore=13,spaceAfter=8))
-    def clean_pdf_value(x):
-        value = str(x if x is not None else '—')
-        value = ''.join(ch if ch.isprintable() else ' ' for ch in value)
-        value = value.replace('▪', '-').replace('■', '-').replace('•', '-').strip()
-        return escape(value).replace('_', '_<wbr/>').replace('/', '/<wbr/>').replace('\n', '<br/>')
-    para=lambda x:Paragraph(clean_pdf_value(x),styles['RPCell'])
-    story=[Paragraph('RiskPulse AI | Executive Risk Report',styles['RPTitle']),
-        Paragraph(f"Project: {escape(str(metrics.get('project','Not identified')))} | Generated {datetime.now().strftime('%B %d, %Y')}",styles['RPBody'])]
-    if metrics:
-        kpis = [('Turnover variance', (f"+{metrics['delay_days']} calendar days" if metrics.get('delay_days') is not None else 'Not confirmed')),
-                ('Pending change', (f"${metrics['pending_pco']:,.0f}" if metrics.get('pending_pco') is not None else 'Not confirmed')),
-                ('Contingency if approved', (f"${metrics['contingency_after']:,.0f}" if metrics.get('contingency_after') is not None else 'Not confirmed'))]
-        cards=Table([[Paragraph(escape(k),styles['RPCell']) for k,v in kpis],
-                     [Paragraph(f"<b>{escape(v)}</b>",styles['RPBody']) for k,v in kpis]],colWidths=[175,175,176])
-        cards.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#eff6ff')),('TOPPADDING',(0,0),(-1,-1),8),('BOTTOMPADDING',(0,0),(-1,-1),8),('LEFTPADDING',(0,0),(-1,-1),12)]))
-        story += [Spacer(1,8),cards]
-    story += [Paragraph('Executive Assessment',styles['RPSection']),Paragraph(escape(summary_text),styles['RPBody'])]
-    def tbl(headers,rows,widths):
-        data=[[para(x) for x in headers]]+[[para(x) for x in row] for row in rows]
-        t=Table(data,colWidths=widths,repeatRows=1,hAlign='LEFT')
-        t.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e2e8f0')),('VALIGN',(0,0),(-1,-1),'TOP'),('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#f8fafc')]),('BOTTOMPADDING',(0,0),(-1,-1),7),('TOPPADDING',(0,0),(-1,-1),7),('LEFTPADDING',(0,0),(-1,-1),7),('RIGHTPADDING',(0,0),(-1,-1),7),('LINEBELOW',(0,0),(-1,0),0.7,colors.HexColor('#cbd5e1'))]))
+    """Owner-facing export; decisions and impacts first, detailed evidence second."""
+    metrics = metrics or {}
+    navy=colors.HexColor('#15233b'); muted=colors.HexColor('#516079')
+    pale=colors.HexColor('#edf4fc'); line=colors.HexColor('#dee6f0')
+    buf=BytesIO()
+    doc=SimpleDocTemplate(buf,pagesize=(612,792),leftMargin=42,rightMargin=42,topMargin=45,bottomMargin=42)
+    ss=getSampleStyleSheet()
+    ss.add(ParagraphStyle(name='RP_T',parent=ss['Title'],fontName='Helvetica-Bold',fontSize=17,leading=22,textColor=navy,alignment=0,spaceAfter=6))
+    ss.add(ParagraphStyle(name='RP_S',parent=ss['Heading2'],fontName='Helvetica-Bold',fontSize=11.3,leading=15,textColor=navy,spaceBefore=12,spaceAfter=6,keepWithNext=True))
+    ss.add(ParagraphStyle(name='RP_B',parent=ss['BodyText'],fontName='Helvetica',fontSize=9,leading=13,textColor=navy,spaceAfter=6))
+    ss.add(ParagraphStyle(name='RP_M',parent=ss['BodyText'],fontName='Helvetica',fontSize=8,leading=11,textColor=muted,spaceAfter=5))
+    ss.add(ParagraphStyle(name='RP_C',parent=ss['BodyText'],fontName='Helvetica',fontSize=7.2,leading=10,textColor=navy))
+    ss.add(ParagraphStyle(name='RP_H',parent=ss['BodyText'],fontName='Helvetica-Bold',fontSize=7.5,leading=10,textColor=navy))
+    def para(x, kind='RP_C',filename=False): return _rp_pdf_cell(x,ss[kind],filename)
+    def table(headers, rows, widths):
+        data=[[para(v,'RP_H') for v in headers]]+[[para(v,filename=(headers[i]=='Source')) for i,v in enumerate(row)] for row in rows]
+        t=Table(data,colWidths=widths,repeatRows=1,hAlign='LEFT',splitByRow=1)
+        t.setStyle(TableStyle([
+            ('BACKGROUND',(0,0),(-1,0),pale),('VALIGN',(0,0),(-1,-1),'TOP'),
+            ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#f8fafc')]),
+            ('LEFTPADDING',(0,0),(-1,-1),7),('RIGHTPADDING',(0,0),(-1,-1),7),
+            ('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6),
+            ('LINEBELOW',(0,0),(-1,0),0.7,line)]))
         return t
-    story.append(Paragraph('Key Risks and Source Evidence',styles['RPSection']))
-    if risk_data:
-        story.append(tbl(['Risk / severity','Evidence','Source'],[[f"{r.get('Risk / Issue','')} ({r.get('Severity','')})",r.get('Evidence / Quote',''),r.get('Source File','')] for r in risk_data],[136,263,127]))
-    else:story.append(Paragraph('No corroborated findings identified by selected analysis mode.',styles['RPBody']))
-    story.append(Paragraph('Actions and Decisions — Verify Status',styles['RPSection']))
-    if mitigation_data:
-        story.append(tbl(['Action','Proposed owner / timing'],[[('Recorded: ' if str(m.get('Status','')).startswith('Recorded') else 'Proposed: ') + m.get('Action Item',''),f"{m.get('Owner','')} | {m.get('Timeframe','')}"] for m in mitigation_data],[315,211]))
-    else:story.append(Paragraph('No supported recommended actions generated.',styles['RPBody']))
-    governance_section=[Paragraph('Governance and Decision Flags',styles['RPSection'])]
-    for f in governance_flags:
-        governance_section.append(Paragraph('- '+escape(str(f)),styles['RPBody']))
-    if not governance_flags: governance_section.append(Paragraph('No additional flags identified by selected analysis mode.',styles['RPBody']))
-    # Keep heading with at least its first finding; allow remaining findings to flow naturally.
-    if len(governance_section)>1:
-        story.append(KeepTogether(governance_section[:2])); story.extend(governance_section[2:])
-    else: story.extend(governance_section)
-    story.append(Spacer(1,10));story.append(Paragraph('AI-assisted decision support. Verify with current project records before distribution or action.',styles['RPBody']))
-    def footer(canvas,document):
-        canvas.saveState();canvas.setFont('Helvetica',8);canvas.setFillColor(colors.HexColor('#64748b'))
-        canvas.drawString(43,28,'RiskPulse AI | Source-backed project review');canvas.drawRightString(569,28,f'Page {document.page}');canvas.restoreState()
+    risks=risk_data if isinstance(risk_data,list) else []
+    actions=mitigation_data if isinstance(mitigation_data,list) else []
+    recorded=[a for a in actions if str(a.get('Status','')).startswith('Recorded')]
+    proposed=[a for a in actions if not str(a.get('Status','')).startswith('Recorded')]
+    high=sum(str(r.get('Severity','')).lower()=='high' for r in risks)
+    story=[para('RiskPulse AI  |  Executive Risk Brief','RP_T'),
+           para(f"{metrics.get('project') or 'Project not specified'}  |  Prepared {datetime.now().strftime('%B %d, %Y')}",'RP_M')]
+    date_diff=metrics.get('delay_days')
+    stat='AT RISK' if (isinstance(date_diff,(int,float)) and date_diff>0) or high else ('REVIEW REQUIRED' if risks else 'NOT ASSESSED')
+    story.append(para(f'PROJECT STATUS: {stat}  |  {len(risks)} findings  |  {high} high priority','RP_H'))
+    cards=[('Turnover variance',f'+{date_diff} days' if date_diff is not None else 'Not confirmed'),
+           ('Pending change',f"${metrics['pending_pco']:,.0f}" if metrics.get('pending_pco') is not None else 'Not confirmed'),
+           ('Contingency if approved',f"${metrics['contingency_after']:,.0f}" if metrics.get('contingency_after') is not None else 'Not confirmed')]
+    k=Table([[para(x[0],'RP_M') for x in cards],[para(x[1],'RP_H') for x in cards]],colWidths=[176,176,176]);k.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),pale),('TOPPADDING',(0,0),(-1,-1),7),('BOTTOMPADDING',(0,0),(-1,-1),7),('LEFTPADDING',(0,0),(-1,-1),9)]))
+    story.extend([Spacer(1,9),k,para('Executive assessment','RP_S')])
+    if isinstance(date_diff,(int,float)) and date_diff>0:
+        takeaway=f'The schedule forecasts turnover {date_diff} calendar days after the contractual milestone. Confirm a credible recovery and commissioning sequence before describing delivery as on track.'
+    elif risks:takeaway='Reported issues require management review. Validate schedule, cost, and outstanding decisions before confirming project status.'
+    else:takeaway='The selected analysis mode did not identify supported risks; this is not confirmation that the project is risk-free.'
+    story.append(para(takeaway,'RP_B'))
+    if summary_text:story.append(para(_rp_plain(summary_text),'RP_M'))
+    story.append(para('Owner decisions and recorded actions','RP_S'))
+    if recorded:
+        story.append(table(['Recorded requirement','Responsible','Due'],[[a.get('Action Item',''),a.get('Owner',''),a.get('Timeframe','')] for a in recorded],[288,147,93]))
+        story.append(para('Actions originate from meeting records; current completion and approval status are not verified.','RP_M'))
+    else:story.append(para('No dated owner actions were extracted. Review meeting records directly.','RP_M'))
+    story.append(para('Priority risks','RP_S'))
+    if risks:
+        story.append(table(['Risk / priority','Evidence (condensed)','Source'],[[f"{r.get('Risk / Issue','')} | {r.get('Severity','')}",_rp_plain(r.get('Evidence / Quote',''))[:200].rstrip(' ,;') + ('…' if len(_rp_plain(r.get('Evidence / Quote','')))>200 else ''),r.get('Source File','')] for r in risks],[161,246,121]))
+    else:story.append(para('No substantiated findings in the selected analysis mode.','RP_M'))
+    if proposed:
+        story.append(para('Recommended next steps — not assigned','RP_S'))
+        story.append(table(['Recommendation','Suggested owner / timing'],[[a.get('Action Item',''),f"{a.get('Owner','Not assigned')} | {a.get('Timeframe','Not set')}"] for a in proposed],[328,200]))
+    if governance_flags:
+        story.append(para('Reporting and approval considerations','RP_S'))
+        for flag in governance_flags:story.append(para('• '+_rp_plain(flag),'RP_B'))
+    story.extend([Spacer(1,8),para('Decision support only. Confirm all source details, assignments, and current statuses before distribution.','RP_M')])
+    def footer(c,d):
+        c.saveState();c.setStrokeColor(line);c.line(42,34,570,34);c.setFont('Helvetica',8);c.setFillColor(muted)
+        c.drawString(42,24,'RiskPulse AI  |  Owner project oversight');c.drawRightString(570,24,f'Page {d.page}');c.restoreState()
     doc.build(story,onFirstPage=footer,onLaterPages=footer)
     return buf.getvalue()
 
 
 def generate_excel_risk_register(result):
-    """One editable Excel file, with risk register, action log and notes."""
+    """Owner-side editable tracker, preserving the current analysis and export signature."""
     output=BytesIO()
+    risks=result.get('risk_matrix',[]) or []
+    actions=result.get('mitigation_plan',[]) or []
+    flags=result.get('governance_flags',[]) or []
+    m=result.get('metrics',{}) or {}
     with pd.ExcelWriter(output,engine='xlsxwriter') as writer:
-        sheets=[('Risk Register',result.get('risk_matrix',[]),['Risk / Issue','Severity','Category','Evidence / Quote','Source File']),
-                ('Action and Decision Log',result.get('mitigation_plan',[]),['Action Item','Owner','Timeframe','Priority','Related Risk','Status']),
-                ('Governance Flags',[{'Flag':f} for f in result.get('governance_flags',[])],['Flag'])]
-        for sheet_name,items,columns in sheets:
-            df=pd.DataFrame(items)
-            for c in columns:
-                if c not in df:df[c]=''
-            df=df[columns];df.to_excel(writer,sheet_name=sheet_name,index=False)
-            ws=writer.sheets[sheet_name];wb=writer.book
-            header=wb.add_format({'bold':True,'bg_color':'#0f172a','font_color':'white','text_wrap':True,'valign':'vcenter'})
-            body=wb.add_format({'text_wrap':True,'valign':'top'})
-            ws.set_row(0,28)
-            for col,label in enumerate(columns):
-                width=62 if label in ('Evidence / Quote','Action Item','Flag') else 30 if label in ('Risk / Issue','Related Risk') else 23
-                ws.set_column(col,col,width,body);ws.write(0,col,label,header)
-            ws.freeze_panes(1,0);ws.autofilter(0,0,max(len(df),1),len(columns)-1)
-            for idx in range(1,len(df)+1):ws.set_row(idx,40)
-            if 'Severity' in columns and len(df):
-                col=columns.index('Severity'); ws.conditional_format(1,col,len(df),col,{'type':'text','criteria':'containing','value':'High','format':wb.add_format({'bg_color':'#fee2e2','font_color':'#991b1b'})})
-        summary=writer.book.add_worksheet('Executive Summary')
-        summary.set_column(0,0,110)
-        summary.write(0,0,'Executive Assessment',writer.book.add_format({'bold':True,'font_size':14,'font_color':'#0f172a'}))
-        summary.write(2,0,result.get('executive_summary',''),writer.book.add_format({'text_wrap':True,'valign':'top'}))
-        summary.set_row(2,90)
+        wb=writer.book
+        navy=wb.add_format({'bg_color':'#14243e','font_color':'white','bold':True,'text_wrap':True,'valign':'vcenter'})
+        body=wb.add_format({'text_wrap':True,'valign':'top','font_color':'#23324a'})
+        currency=wb.add_format({'bold':True,'font_size':15,'font_color':'#17345e','num_format':'$#,##0'})
+        big=wb.add_format({'bold':True,'font_size':15,'font_color':'#17345e'})
+        tag=wb.add_format({'bold':True,'font_color':'#66758b'})
+        highfmt=wb.add_format({'bg_color':'#fee2e2','font_color':'#991b1b'})
+        medfmt=wb.add_format({'bg_color':'#fff3cb','font_color':'#92400e'})
+        rows=[]
+        for i,r in enumerate(risks,1):
+            rows.append({'Risk ID':f'R-{i:03d}','Risk / Issue':r.get('Risk / Issue',''),'Severity':r.get('Severity',''),'Category':r.get('Category',''),
+                         'Responsible Party':'To assign','Mitigation / Response':'To define','Status':'Open - verify',
+                         'Due Date':'','Source Evidence':_rp_plain(r.get('Evidence / Quote','')),'Source File':r.get('Source File','')})
+        actionrows=[]
+        for i,a in enumerate(actions,1):
+            recorded=str(a.get('Status','')).startswith('Recorded')
+            actionrows.append({'Action ID':f'A-{i:03d}','Type':'Recorded' if recorded else 'Recommended','Action / Decision':a.get('Action Item',''),
+                               'Responsible Party':a.get('Owner',''),'Due / Timeframe':a.get('Timeframe',''),
+                               'Status':a.get('Status','Verify') if recorded else 'Proposed - not assigned',
+                               'Related Risk':a.get('Related Risk',''),'Completion Date':'','Notes':'','Source File':a.get('Source File','')})
+        datasets=[('Risk Register',rows,['Risk ID','Risk / Issue','Severity','Category','Responsible Party','Mitigation / Response','Status','Due Date','Source Evidence','Source File']),
+                  ('Action and Decision Log',actionrows,['Action ID','Type','Action / Decision','Responsible Party','Due / Timeframe','Status','Related Risk','Completion Date','Notes','Source File']),
+                  ('Governance Flags',[{'Flag':_rp_plain(f),'Review Status':'Requires verification'} for f in flags],['Flag','Review Status'])]
+        for name,items,cols in datasets:
+            frame=pd.DataFrame(items,columns=cols)
+            frame.to_excel(writer,sheet_name=name,index=False)
+            ws=writer.sheets[name]
+            for j,col in enumerate(cols):
+                width=48 if col in ('Risk / Issue','Action / Decision','Source Evidence','Flag','Mitigation / Response') else 28 if col in ('Source File','Related Risk','Responsible Party','Due / Timeframe') else 19
+                ws.set_column(j,j,width,body)
+                ws.write(0,j,col,navy)
+            ws.set_row(0,29)
+            for n in range(1,len(frame)+1):ws.set_row(n,45)
+            ws.freeze_panes(1,0)
+            ws.autofilter(0,0,max(len(frame),1),len(cols)-1)
+            if 'Severity' in cols and items:
+                c=cols.index('Severity');ws.conditional_format(1,c,len(frame),c,{'type':'text','criteria':'containing','value':'High','format':highfmt})
+                ws.conditional_format(1,c,len(frame),c,{'type':'text','criteria':'containing','value':'Medium','format':medfmt})
+            if name=='Risk Register':
+                ws.data_validation(1,cols.index('Status'),max(len(frame),100),cols.index('Status'),{'validate':'list','source':['Open - verify','In progress','Mitigated','Closed','On hold']})
+                ws.data_validation(1,cols.index('Severity'),max(len(frame),100),cols.index('Severity'),{'validate':'list','source':['High','Medium','Low','Not assessed']})
+            if name=='Action and Decision Log':
+                ws.data_validation(1,cols.index('Status'),max(len(frame),100),cols.index('Status'),{'validate':'list','source':['Proposed - not assigned','Recorded - verify','In progress','Complete','Blocked','Cancelled']})
+        ws=wb.add_worksheet('Executive Summary');ws.set_column('A:A',27);ws.set_column('B:B',26);ws.set_column('C:C',32);ws.set_column('D:D',45)
+        ws.merge_range('A1:D2','PROJECT RISK | EXECUTIVE OVERVIEW',wb.add_format({'bold':True,'font_size':16,'font_color':'white','bg_color':'#14243e','valign':'vcenter'}))
+        ws.write('A4','Project',tag);ws.write('B4',m.get('project','Not identified'))
+        ws.write('A6','Turnover variance',tag);ws.write('B6',f"+{m['delay_days']} days" if m.get('delay_days') is not None else 'Not confirmed',big)
+        ws.write('A8','Pending change',tag)
+        if m.get('pending_pco') is not None:ws.write_number('B8',m['pending_pco'],currency)
+        else:ws.write('B8','Not confirmed',big)
+        ws.write('A10','Contingency if approved',tag)
+        if m.get('contingency_after') is not None:ws.write_number('B10',m['contingency_after'],currency)
+        else:ws.write('B10','Not confirmed',big)
+        ws.write('A12','Identified risks',tag);ws.write_number('B12',len(risks),big)
+        ws.write('A14','Recorded actions',tag);ws.write_number('B14',sum(str(a.get('Status','')).startswith('Recorded') for a in actions),big)
+        ws.write('A16','Assessment',tag)
+        ws.merge_range('A17:D20',_rp_plain(result.get('executive_summary','')),wb.add_format({'text_wrap':True,'valign':'top','font_color':'#23324a','bg_color':'#f2f6fb'}))
+        ws.write('A22','Use the tracker sheets for editable owners, mitigation, due dates, and statuses.',tag)
     return output.getvalue()
 
 # ==========================================
