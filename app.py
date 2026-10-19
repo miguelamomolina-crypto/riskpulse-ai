@@ -23,7 +23,7 @@ import xlsxwriter
 # ==========================================
 st.set_page_config(
     page_title="RiskPulse AI | Project Risk Intelligence Platform",
-    page_icon="🛡️",
+    page_icon="riskpulse_icon.png",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
