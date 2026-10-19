@@ -17,6 +17,7 @@ from reportlab.lib.units import inch
 from html import escape
 from datetime import datetime
 import xlsxwriter
+import base64
 
 # ==========================================
 # PAGE CONFIGURATION & CUSTOM SAAS STYLING
@@ -761,11 +762,21 @@ with st.sidebar:
 # ==========================================
 
 # Top Navy Header
-st.markdown("""
+logo_b64 = base64.b64encode(
+    Path("riskpulse_icon.png").read_bytes()
+).decode("utf-8")
+
+st.markdown(f"""
 <div class="hero-container">
+    <img
+        src="data:image/png;base64,{logo_b64}"
+        style="float:right; width:64px; height:64px; object-fit:contain;"
+    >
     <div class="hero-title">RiskPulse AI</div>
     <div class="hero-subtitle">Project Risk Intelligence</div>
-    <div class="hero-tagline">Turn project records into evidence-backed risk intelligence.</div>
+    <div class="hero-tagline">
+        Turn project records into evidence-backed risk intelligence.
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
