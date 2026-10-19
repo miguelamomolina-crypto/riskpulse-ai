@@ -735,13 +735,14 @@ with st.sidebar:
     mode = st.radio(
         "Execution Engine",
         ["Local Analysis", "Enhanced AI Analysis"],
+        index=1,
         help="Local Analysis extracts grounded sentence evidence without API keys. Enhanced AI Analysis connects to OpenAI."
     )
     
-    api_key = st.secrets.get("OPENAI_API_KEY", "")
+    api_key = st.secrets.get("GEMINI_API_KEY", "")
     model_choice = "gemini-3.5-flash-lite"
     if mode == "Enhanced AI Analysis":
-        api_key = st.text_input("Gemini API Key", type="password")
+        api_key = st.secrets.get("GEMINI_API_KEY", "")
         model_choice = st.selectbox("LLM Model", ["gemini-3.5-flash-lite"])
         if not api_key:
             st.warning("Please enter your Gemini API key.")
