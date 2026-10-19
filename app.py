@@ -43,9 +43,9 @@ st.markdown("""
         display: none !important;
     }
     .block-container {
-        padding-top: 1.25rem !important;
-        padding-bottom: 2rem !important;
-        max-width: 1280px !important;
+    padding-top: 6rem !important;
+    padding-bottom: 2rem !important;
+    max-width: 1280px !important;
     }
 
     /* Navy Header Container */
