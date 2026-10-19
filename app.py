@@ -739,12 +739,12 @@ with st.sidebar:
     )
     
     api_key = st.secrets.get("OPENAI_API_KEY", "")
-    model_choice = "gemini-2.5-flash"
+    model_choice = "gemini-3.5-flash-lite"
     if mode == "Enhanced AI Analysis":
-        api_key = st.text_input("OpenAI API Key", type="password", placeholder="sk-...")
-        model_choice = st.selectbox("LLM Model", ["gemini-2.5-flash"])
+        api_key = st.text_input("Gemini API Key", type="password")
+        model_choice = st.selectbox("LLM Model", ["gemini-3.5-flash-lite"])
         if not api_key:
-            st.warning("Please enter an OpenAI API key for Enhanced AI Analysis.")
+            st.warning("Please enter your Gemini API key.")
             
     st.markdown("---")
     st.subheader("Risk Filters")
