@@ -705,7 +705,7 @@ with st.sidebar:
         help="Local Analysis extracts grounded sentence evidence without API keys. Enhanced AI Analysis connects to OpenAI."
     )
     
-    api_key = ""
+    api_key = st.secrets.get("OPENAI_API_KEY", "")
     model_choice = "gpt-4o-mini"
     if mode == "Enhanced AI Analysis":
         api_key = st.text_input("OpenAI API Key", type="password", placeholder="sk-...")
