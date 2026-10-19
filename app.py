@@ -368,26 +368,40 @@ def extract_text_from_file(uploaded_file):
 # ==========================================
 # OPENAI REST CALL UTILITY
 # ==========================================
-def call_openai_api(api_key, system_prompt, user_prompt, model="gpt-4o-mini"):
-    """Direct urllib REST call to OpenAI API to avoid external SDK dependencies."""
-    url = "https://api.openai.com/v1/chat/completions"
+def call_openai_api(api_key, system_prompt, user_prompt, model="gemini-2.5-flash"):
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+    payload = {
+        "system_instruction": {
+            "parts": [{"text": system_prompt}]
+        },
+        "contents": [
+            {
+                "role": "user",
+                "parts": [{"text": user_prompt}]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.1,
+            "responseMimeType": "application/json"
+        }
+    }
+
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}"
+        "x-goog-api-key": api_key
     }
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        "temperature": 0.1
-    }
-    
-    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
-    with urllib.request.urlopen(req, timeout=30) as response:
-        res_data = json.loads(response.read().decode("utf-8"))
-        return res_data["choices"][0]["message"]["content"]
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST"
+    )
+
+    with urllib.request.urlopen(req, timeout=90) as response:
+        result = json.loads(response.read().decode("utf-8"))
+        return result["candidates"][0]["content"]["parts"][0]["text"]
 
 
 # ==========================================
@@ -725,10 +739,10 @@ with st.sidebar:
     )
     
     api_key = st.secrets.get("OPENAI_API_KEY", "")
-    model_choice = "gpt-4o-mini"
+    model_choice = "gemini-2.5-flash"
     if mode == "Enhanced AI Analysis":
         api_key = st.text_input("OpenAI API Key", type="password", placeholder="sk-...")
-        model_choice = st.selectbox("LLM Model", ["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"])
+        model_choice = st.selectbox("LLM Model", ["gemini-2.5-flash"])
         if not api_key:
             st.warning("Please enter an OpenAI API key for Enhanced AI Analysis.")
             
