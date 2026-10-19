@@ -38,7 +38,7 @@ st.markdown("""
     }
 
     /* Hide Streamlit Top Chrome Header */
-    header[data-testid="stHeader"], div[data-testid="stDecoration"], div[data-testid="stStatusWidget"] {
+    div[data-testid="stDecoration"], div[data-testid="stStatusWidget"] {
         display: none !important;
     }
     .block-container {
