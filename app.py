@@ -294,6 +294,25 @@ st.markdown("""
     h1, h2, h3, h4, h5, h6, p, label, span {
         color: #0f172a;
     }
+/* Fix sidebar background and text */
+section[data-testid="stSidebar"] {
+    background-color: #f8fafc !important;
+}
+
+section[data-testid="stSidebar"] * {
+    color: #0f172a !important;
+}
+
+section[data-testid="stSidebar"] input {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+}
+
+/* Fix top header */
+header[data-testid="stHeader"] {
+    background-color: #f8fafc !important;
+    height: 2.5rem !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
